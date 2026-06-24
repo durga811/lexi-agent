@@ -1,0 +1,23 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+.env
+
+# Persisted vector index (rebuildable from data/raw)
+data/chroma/
+
+# Eval output (regenerable; the durable record lives in ADR.md §6)
+eval_results*.md
+.deepeval*
+
+# macOS
+.DS_Store
