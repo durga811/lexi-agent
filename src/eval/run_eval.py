@@ -60,8 +60,20 @@ def run() -> None:
     else:
         print(f"[warn] deepeval unavailable ({_DEEPEVAL_ERR}); skipping LLM-judge dims.")
 
+    # Optional subset for targeted experiments: EVAL_ONLY="1,2,4" runs the 1st,
+    # 2nd, 4th gold queries only (1-based). Writes to eval_results.subset.md so it
+    # never clobbers the full baseline report.
+    import os
+
+    only = os.environ.get("EVAL_ONLY", "").strip()
+    items = list(GOLD.items())
+    if only:
+        idx = {int(i) - 1 for i in only.split(",")}
+        items = [it for n, it in enumerate(items) if n in idx]
+        print(f"[subset] running {len(items)} of {len(GOLD)} queries: {sorted(int(i) for i in only.split(','))}")
+
     rows: list[dict] = []
-    for query, gold in GOLD.items():
+    for query, gold in items:
         print(f"\n=== Running: {query[:70]}...")
         answer = message_text(
             agent.invoke({"messages": [("user", query)]})["messages"][-1].content
@@ -106,11 +118,11 @@ def run() -> None:
 
         rows.append(row)
 
-    _write_report(rows)
+    _write_report(rows, "eval_results.subset.md" if only else "eval_results.md")
 
 
-def _write_report(rows: list[dict]) -> None:
-    with open("eval_results.md", "w") as f:
+def _write_report(rows: list[dict], out_path: str = "eval_results.md") -> None:
+    with open(out_path, "w") as f:
         f.write("# Evaluation Results\n\n")
         f.write(
             "Backbone metrics (precision/recall/adverse_recall) are deterministic, "
@@ -137,7 +149,7 @@ def _write_report(rows: list[dict]) -> None:
                 if k in r:
                     f.write(f"- **{k}**: {r[k]}\n")
             f.write(f"\n<details><summary>Agent answer</summary>\n\n{r['answer']}\n\n</details>\n\n")
-    print("\nWrote eval_results.md")
+    print(f"\nWrote {out_path}")
 
 
 if __name__ == "__main__":
