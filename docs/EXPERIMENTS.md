@@ -78,3 +78,63 @@ headroom to lift agent recall. **Exception: Q3 commercial** is low even at r@40
 enumeration), pointing to I4 (per-doc summary index), not the reranker.
 
 _Runtime: ~seconds (vs 13 min for the agent eval) — good for tight A/B loops._
+
+### I1 · Cross-encoder reranker — attempt A: `bge-reranker-base`, pool=50 ⚠️ mixed
+
+Over-retrieve 50 with the ensemble → cross-encoder rerank → measure recall@k.
+
+| Query | r@8 Δ | r@20 Δ |
+|---|---|---|
+| Q1 case brief | 0.167→0.278 (+0.11) | 0.333→0.389 (+0.06) |
+| Q2 compensation | 0.333→0.444 (+0.11) | 0.333→0.556 (+0.22) |
+| Q3 commercial | 0.095→0.190 (+0.10) | 0.238→0.333 (+0.10) |
+| Q4 contributory neg | 0.600→0.400 (**−0.20**) | 0.800→0.400 (**−0.40**) |
+| Q5 pay-and-recover | 0.300→0.300 (0.00) | 0.600→0.500 (−0.10) |
+| Q7 passenger | 0.400→0.400 (0.00) | 1.000→0.800 (−0.20) |
+| **MEAN** | 0.316→**0.335 (+0.02)** | 0.551→**0.496 (−0.06)** |
+
+**Decision: not a clear win — do not ship as-is.** Two problems:
+1. **It helps semantic queries (Q1/Q2/Q3) but hurts lexical-strong ones (Q4/Q7).**
+   The cross-encoder reorders away exact-keyword hits BM25 had surfaced well. Net
+   r@8 gain is only +0.02; r@20 regresses.
+2. **Latency 492s for 6 queries (~82s/query on CPU)** — unshippable; every
+   `search_corpus` call would stall the agent.
+
+Hypotheses to test next: (a) a faster reranker (MiniLM) for latency; (b) the
+reranker shouldn't fully discard the ensemble order — fuse reranker rank WITH
+ensemble rank (RRF) so lexical wins survive; (c) smaller pool. → attempt B.
+
+### I1 · attempt B: `ms-marco-MiniLM-L-6-v2`, pool=50 ✅ better
+
+| Query | r@8 Δ | r@20 Δ |
+|---|---|---|
+| Q1 case brief | 0.167→0.278 (+0.11) | 0.333→0.333 (0.00) |
+| Q2 compensation | 0.333→0.333 (0.00) | 0.333→0.444 (+0.11) |
+| Q3 commercial | 0.095→0.190 (+0.10) | 0.238→0.381 (+0.14) |
+| Q4 contributory neg | 0.600→0.600 (0.00) | 0.800→0.800 (0.00) |
+| Q5 pay-and-recover | 0.300→0.300 (0.00) | 0.600→0.300 (**−0.30**) |
+| Q7 passenger | 0.400→0.600 (+0.20) | 1.000→0.800 (−0.20) |
+| **MEAN** | 0.316→**0.383 (+0.07)** | 0.551→**0.510 (−0.04)** |
+
+**MiniLM beats bge-reranker-base here:** bigger r@8 gain (+0.07 vs +0.02), it
+**does not destroy Q4** (lexical query preserved), and it's **10× faster**
+(45s vs 492s for 6 queries). Remaining wart: r@20 regresses on Q5 (lexical
+"pay and recover"). → test fusion (attempt C) to keep the lexical ordering at
+deeper k while keeping MiniLM's r@8 gains.
+
+### I1 · attempt C: MiniLM pure-rerank vs RRF-fusion — head to head
+
+Mean recall (reranker = MiniLM, pool 50):
+
+| config | r@8 | r@20 | per-query @8 regression? |
+|---|---|---|---|
+| baseline | 0.316 | 0.551 | — |
+| **pure-rerank** | **0.383** (+0.07) | 0.510 (−0.04) | **none** (Q1 +0.11, Q3 +0.10, Q7 +0.20, rest flat) |
+| fused-RRF | 0.357 (+0.04) | 0.552 (≈ base) | none |
+
+**DECISION — ship pure-rerank (MiniLM, pool 40, return top-8).** It is a Pareto
+improvement at r@8 (the agent's window): **no query is hurt at r@8** and mean
+recall rises +0.07 (+21% relative). The r@20 dip doesn't reach the agent (it reads
+~8). Fusion preserves deep recall but sacrifices half the r@8 gain — kept as the
+fallback if top_k is raised later (I3). Next: wire into `retriever.py`, run the
+full agent eval to confirm the end-to-end effect, commit.

@@ -65,6 +65,48 @@ def ensemble_ranking_fn(pool: int = POOL):
     return rank
 
 
+def reranked_ranking_fn(pool: int = POOL, model_name: str | None = None):
+    """I1: over-retrieve `pool` with the ensemble, then cross-encoder rerank.
+
+    Returns the FULL reranked ordering so recall@k reflects the reranked top-k.
+    """
+    from src.retrieval.rerank import DEFAULT_RERANKER, rerank
+
+    model_name = model_name or DEFAULT_RERANKER
+    retriever = build_ensemble(pool)
+
+    def rank(query: str) -> list[str]:
+        docs = retriever.invoke(query)
+        reranked = rerank(query, docs, top_n=None, model_name=model_name)
+        return [d.metadata["doc_id"] for d in reranked]
+
+    return rank
+
+
+def fused_rerank_ranking_fn(pool: int = POOL, model_name: str | None = None, c: int = 60):
+    """I1 attempt B: fuse the ensemble order WITH the reranker order via RRF.
+
+    Pure reranking discards BM25's exact-keyword wins (it hurt Q4/Q7). Reciprocal-
+    rank fusion keeps both signals: a chunk ranked high by EITHER the ensemble or
+    the cross-encoder floats up. score = 1/(c+rank_ensemble) + 1/(c+rank_reranker).
+    """
+    from src.retrieval.rerank import DEFAULT_RERANKER, rerank
+
+    model_name = model_name or DEFAULT_RERANKER
+    retriever = build_ensemble(pool)
+
+    def rank(query: str) -> list[str]:
+        docs = retriever.invoke(query)  # ensemble order
+        reranked = rerank(query, docs, top_n=None, model_name=model_name)
+        # map each chunk (by identity/position) to its two ranks
+        rank_e = {id(d): i for i, d in enumerate(docs)}
+        rank_r = {id(d): i for i, d in enumerate(reranked)}
+        fused = sorted(docs, key=lambda d: -(1.0 / (c + rank_e[id(d)]) + 1.0 / (c + rank_r[id(d)])))
+        return [d.metadata["doc_id"] for d in fused]
+
+    return rank
+
+
 def _unique_in_order(doc_ids: list[str]) -> list[str]:
     return list(OrderedDict.fromkeys(doc_ids))
 
