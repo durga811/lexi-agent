@@ -37,6 +37,13 @@ class Settings(BaseSettings):
 
     # --- retrieval ---------------------------------------------------------
     top_k: int = 8
+    # Cross-encoder reranker (I1): over-retrieve `rerank_pool` ensemble candidates,
+    # rerank with the cross-encoder, return top_k. Measured +0.07 recall@8 with no
+    # per-query regression (see docs/EXPERIMENTS.md). Set use_reranker=False to
+    # fall back to the plain ensemble.
+    use_reranker: bool = True
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerank_pool: int = 40
 
 
 settings = Settings()

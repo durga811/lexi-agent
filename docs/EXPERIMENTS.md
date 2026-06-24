@@ -19,8 +19,8 @@ the verified gold set, recorded here, and committed. One variable at a time.
 
 | # | Improvement | Targets | Status |
 |---|---|---|---|
-| **I8** | Retriever-level eval (ContextPrecision/Recall) | measurement infra | 🔄 in progress |
-| **I1** | Cross-encoder reranker (`bge-reranker`, over-retrieve → top-k) | precision + recall | ⏳ |
+| **I8** | Retriever-level eval (ContextPrecision/Recall) | measurement infra | ✅ done |
+| **I1** | Cross-encoder reranker (MiniLM, over-retrieve 40 → top-8) | precision + recall | ✅ merged (+0.19 prec, +0.09 rec) |
 | **I2** | Counter-query / adverse-retrieval step | adverse_recall (0.20) | ⏳ |
 | **I3** | Raise top_k / over-retrieve | recall | ⏳ |
 | **I4** | Per-document summary index (parent-doc retrieval) | doc-level recall (Q3/Q7) | ⏳ |
@@ -138,3 +138,30 @@ recall rises +0.07 (+21% relative). The r@20 dip doesn't reach the agent (it rea
 ~8). Fusion preserves deep recall but sacrifices half the r@8 gain — kept as the
 fallback if top_k is raised later (I3). Next: wire into `retriever.py`, run the
 full agent eval to confirm the end-to-end effect, commit.
+
+### I1 · END-TO-END agent eval — CONFIRMED ✅ merged
+
+Wired into `retriever.py` (`use_reranker=True`, MiniLM, pool 40 → top 8) and ran
+the full agent eval (15m33s, 7/7 queries, no errors).
+
+| Query | precision Δ | recall Δ | adv_recall Δ |
+|---|---|---|---|
+| Q1 case brief | 0.90 → **1.00** | 0.50 → 0.50 | 0.20 → **0.40** |
+| Q2 compensation | 0.43 → **0.60** | 0.33 → 0.33 | — |
+| Q3 commercial | 0.75 → **0.80** | 0.43 → 0.38 | — |
+| Q4 contributory neg | 0.67 → **1.00** | 0.80 → **1.00** | 1.00 → 1.00 |
+| Q5 pay-and-recover | 0.63 → **0.71** | 0.50 → 0.50 | — |
+| Q7 passenger | 0.43 → **0.83** | 0.60 → **1.00** | — |
+| **MEAN (Q1–Q7, ex-Q6)** | **0.64 → 0.83 (+0.19)** | **0.53 → 0.62 (+0.09)** | Q1 **0.20 → 0.40** |
+
+**Verdict: clear win, merged.** Precision up on *every* query (the reranker pushes
+topically-adjacent-but-off-gold docs below the cut), recall up overall, and the
+headline weakness — case-brief **adverse_recall doubled 0.20 → 0.40**. The
+retriever-level +0.07 r@8 translated to +0.19 agent precision / +0.09 recall.
+Cost: +~2 min eval wall-clock; ~3–4s added per `search_corpus` call (acceptable
+for a research agent; tunable via `rerank_pool`).
+
+**Caveat:** the G-Eval *reasoning* scores swung erratically (e.g. Q4 0.80→0.10
+despite now-perfect precision/recall) — judge noise, not signal. The deterministic
+backbone is the trustworthy delta; the LLM-judge layer needs multi-sample
+averaging to be A/B-usable (folds into I9).

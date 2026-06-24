@@ -164,6 +164,21 @@ Dynamic-workflow proof (from traces): simple queries resolve in ~1–2 tool call
 and answer concisely; the case brief makes many multi-angle searches +
 `get_document` reads before the three-section report. Same code, no branching.
 
+### Measured improvements (one variable at a time — full log in `docs/EXPERIMENTS.md`)
+
+| Change | Method | precision | recall | adverse_recall (Q1) |
+|---|---|---|---|---|
+| Baseline (hybrid, no rerank) | run_eval | 0.64 | 0.53 | 0.20 |
+| **+ I1 cross-encoder reranker** (MiniLM, over-retrieve 40 → top-8) | run_eval | **0.83 (+0.19)** | **0.62 (+0.09)** | **0.40 (+0.20)** |
+
+*How I1 was chosen:* a fast retriever-level metric (I8) showed gold docs sit in the
+candidate pool but past the agent's top-8 (recall 0.32@8 → 0.71@40). I A/B'd three
+rerankers — `bge-reranker-base` gave +0.02 r@8 but wrecked the lexical query and
+ran 10× slower; **MiniLM gave +0.07 r@8 with no per-query regression**; RRF-fusion
+was middle. Shipped MiniLM; end-to-end confirmed +0.19 precision / +0.09 recall and
+doubled the case-brief adverse-recall. *(G-Eval reasoning scores are too noisy
+run-to-run to A/B on — the deterministic backbone is the signal.)*
+
 ### Failure analysis (where it fails, what I'd fix first)
 
 1. **Adverse recall on the case brief is the headline weakness (0.20).** Now that
