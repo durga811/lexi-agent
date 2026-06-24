@@ -219,3 +219,34 @@ single-run A/B — it ranges 0.00–0.40 run to run. The "I1 doubled adverse_rec
 0.20→0.40" claim was a single-sample artifact; the true value is ~0.20 and the
 reranker did **not** reliably move it (its robust win is precision/recall). Future
 A/B of small-denominator or LLM-judge metrics must average ≥3 runs.
+
+### I7 · Metadata tagging — experiment on branch `exp/i7-metadata`
+
+Tested whether **independent** ingest-time heuristics (no gold-label leakage) can
+tag docs well enough that metadata filtering beats semantic retrieval. Two axes:
+
+**(a) Vehicle-type tag — WORKS.** Regex counts commercial vs private vs tractor
+keywords; `is_commercial = ≥2 commercial hits, not outweighed by private/tractor`.
+Scored vs the gold Q3 commercial set: **recall 0.952 / precision 0.833** (24
+flagged, 20 of 21 caught; 1 miss = DOC_010, single "auto" mention; FPs are
+criminal-bus cases 015/017 and stray mentions). → a vehicle-metadata filter would
+lift **Q3 doc-level recall from 0.38 → ~0.95**. Objective attributes ARE reliably
+taggable by heuristic.
+
+**(b) Insurer-outcome tag — FAILS.** Regex for exoneration vs pay-and-recover does
+NOT separate the adverse (exonerated) docs from the supporting (liable/pay-recover)
+docs — DOC_028/029/030 (adverse) show payrec≫exon (look supporting), while several
+support docs (032/034/041) show exon≫payrec (look adverse). The adverse docs
+discuss "pay and recover" heavily *because they reject/distinguish it*; support
+docs discuss "exoneration" *because they reject the insurer's argument*. **Keyword
+presence ≠ the operative holding** — the same reason semantic retrieval fails on
+these and I2 was null.
+
+**Decisions:**
+- **Vehicle metadata: worth shipping** for doc-level queries (Q3-type) — clean,
+  honest win. Needs a re-ingest + a metadata-filter path. Kept on `exp/i7-metadata`;
+  NOT merged into `retrieval-improvements` (structure unchanged there per plan).
+- **Adverse_recall is NOT fixable by heuristic metadata.** It needs an LLM
+  outcome-classifier at ingest (read the operative order; heavier, watch eval
+  circularity) or it stays a documented limitation — the honest ceiling on the
+  adverse dimension for this corpus.
