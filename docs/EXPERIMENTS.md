@@ -33,6 +33,48 @@ Legend: ⏳ todo · 🔄 in progress · ✅ merged · ❌ rejected (kept for the
 
 ---
 
+## Results at a glance (master comparison)
+
+| Exp | Change | Metric moved | Result | Why |
+|---|---|---|---|---|
+| I8 | retriever-level eval | — | ✅ infra | gives deterministic recall@k in seconds; enables fast A/B |
+| **I1** | **reranker — MiniLM** | precision/recall | ✅ **SHIPPED** | gold docs were in the pool but ranked low (r@8 0.32→r@40 0.71); cross-encoder re-floats them → **+0.19 prec / +0.09 rec** |
+| I1 | reranker — bge-base | precision/recall | ❌ rejected | +0.02 r@8 only, broke the lexical query (Q4), 10× slower |
+| I1 | reranker — RRF fusion | precision/recall | ➖ fallback | +0.04 r@8; preserves deep recall but gives up half the r@8 gain |
+| I2 | counter-query prompt | adverse_recall | ❌ null | 0.20 vs 0.20 (3-run A/B); adverse docs never reach top-8, so prompting can't help |
+| I7a | vehicle metadata tag | Q3 doc-recall | ✅ works (unwired) | objective attribute → reliably taggable; recall 0.95 → would lift Q3 0.38→~0.95 |
+| I7b | outcome metadata tag | adverse_recall | ❌ fails | regex counts keywords, not the holding; adverse docs *discuss* "pay & recover" while rejecting it |
+
+**The single pattern:** levers acting on *content relevance* (I1) or *objective
+attributes* (I7a) **work**; levers needing to read the *operative holding* —
+adverse-vs-supporting — **all fail** (I2, I7b), because that signal is in the
+ruling, not the vocabulary or embedding. That is the architectural ceiling on the
+adverse dimension for this corpus.
+
+## Experiment flow
+
+```
+                I8  measurement infra (deterministic recall@k, fast A/B)
+                 │
+                 ▼
+        ┌─────  I1  reranker (over-retrieve 40 → rerank → top-8)  ─────┐
+        │  A bge-base ❌  +0.02 r@8, broke Q4, 10× slow               │
+        │  B MiniLM   ✅  +0.07 r@8, no per-query regression  ◀── ship │
+        │  C RRF-fuse ➖  +0.04 r@8 (fallback if top_k raised)         │
+        └──────────────────────────┬──────────────────────────────────┘
+                                    ▼  end-to-end: +0.19 prec / +0.09 rec  → MERGED
+        adverse_recall still ~0.20 → two attempts, both fail (same root cause):
+            I2  counter-query prompt     ❌ null   (0.20 = 0.20)
+            I7b outcome metadata (regex) ❌ fails  (keywords ≠ holding)
+        objective-attribute axis instead:
+            I7a vehicle metadata (regex) ✅ works  (0.95 recall → Q3 0.38→~0.95)  [exp branch, unwired]
+
+  branches:  main ──▶ retrieval-improvements (I8, I1 shipped, I2 reverted, I7 notes)
+                            └──▶ exp/i7-metadata (I7 experiment code, isolated)
+```
+
+---
+
 ## Baseline — end-to-end agent (2026-06-24, `gemini-3.5-flash`, commit 402d181)
 
 | Query | precision | recall | f1 | adverse_recall | reasoning |
