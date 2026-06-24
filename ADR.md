@@ -168,16 +168,24 @@ and answer concisely; the case brief makes many multi-angle searches +
 
 | Change | Method | precision | recall | adverse_recall (Q1) |
 |---|---|---|---|---|
-| Baseline (hybrid, no rerank) | run_eval | 0.64 | 0.53 | 0.20 |
-| **+ I1 cross-encoder reranker** (MiniLM, over-retrieve 40 → top-8) | run_eval | **0.83 (+0.19)** | **0.62 (+0.09)** | **0.40 (+0.20)** |
+| Baseline (hybrid, no rerank) | run_eval | 0.64 | 0.53 | ~0.20† |
+| **+ I1 cross-encoder reranker** (MiniLM, over-retrieve 40 → top-8) | run_eval | **0.83 (+0.19)** | **0.62 (+0.09)** | ~0.20† (unchanged) |
+| I2 counter-query prompt | A/B ×3 | (within noise) | (within noise) | ~0.20† (no effect — reverted) |
 
 *How I1 was chosen:* a fast retriever-level metric (I8) showed gold docs sit in the
 candidate pool but past the agent's top-8 (recall 0.32@8 → 0.71@40). I A/B'd three
 rerankers — `bge-reranker-base` gave +0.02 r@8 but wrecked the lexical query and
 ran 10× slower; **MiniLM gave +0.07 r@8 with no per-query regression**; RRF-fusion
-was middle. Shipped MiniLM; end-to-end confirmed +0.19 precision / +0.09 recall and
-doubled the case-brief adverse-recall. *(G-Eval reasoning scores are too noisy
-run-to-run to A/B on — the deterministic backbone is the signal.)*
+was middle. Shipped MiniLM; end-to-end confirmed +0.19 precision / +0.09 recall
+(both anchored by the deterministic retriever metric, so not agent noise).
+
+† **adverse_recall (Q1) is high-variance** (denominator 5; ranges 0.00–0.40 per
+run). Measured over 3 runs it is ~0.20 regardless of reranker or counter-query
+prompt — neither moved it. The adverse docs rank 5–16 (DOC_002 unreachable), so
+they don't reach the agent's top-8; the fix is structural (I7 metadata
+tagging/filtering), not retrieval-ranking or prompting. *(G-Eval reasoning scores
+are likewise too noisy to A/B on single runs — the deterministic backbone is the
+signal.)*
 
 ### Failure analysis (where it fails, what I'd fix first)
 

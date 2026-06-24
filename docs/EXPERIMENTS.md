@@ -21,7 +21,7 @@ the verified gold set, recorded here, and committed. One variable at a time.
 |---|---|---|---|
 | **I8** | Retriever-level eval (ContextPrecision/Recall) | measurement infra | ✅ done |
 | **I1** | Cross-encoder reranker (MiniLM, over-retrieve 40 → top-8) | precision + recall | ✅ merged (+0.19 prec, +0.09 rec) |
-| **I2** | Counter-query / adverse-retrieval step | adverse_recall (0.20) | ⏳ |
+| **I2** | Counter-query / adverse-retrieval step (prompt-only) | adverse_recall | ❌ null — reverted (retrieval is the bottleneck → I7) |
 | **I3** | Raise top_k / over-retrieve | recall | ⏳ |
 | **I4** | Per-document summary index (parent-doc retrieval) | doc-level recall (Q3/Q7) | ⏳ |
 | **I5** | Tune ensemble BM25/dense weights | lexical vs semantic balance | ⏳ |
@@ -155,13 +155,67 @@ the full agent eval (15m33s, 7/7 queries, no errors).
 | **MEAN (Q1–Q7, ex-Q6)** | **0.64 → 0.83 (+0.19)** | **0.53 → 0.62 (+0.09)** | Q1 **0.20 → 0.40** |
 
 **Verdict: clear win, merged.** Precision up on *every* query (the reranker pushes
-topically-adjacent-but-off-gold docs below the cut), recall up overall, and the
-headline weakness — case-brief **adverse_recall doubled 0.20 → 0.40**. The
+topically-adjacent-but-off-gold docs below the cut), recall up overall. The
 retriever-level +0.07 r@8 translated to +0.19 agent precision / +0.09 recall.
 Cost: +~2 min eval wall-clock; ~3–4s added per `search_corpus` call (acceptable
 for a research agent; tunable via `rerank_pool`).
+
+> **Correction (after I2 variance testing):** the single-run "adverse_recall
+> 0.20→0.40" reported here is within noise — over 3 runs adverse_recall is ~0.20
+> with or without the reranker (it ranges 0.00–0.40 per run). The reranker's
+> robust, repeatable gain is **precision/recall**, anchored by the deterministic
+> retriever-level r@8 (+0.07, no agent noise). Adverse_recall needs a structural
+> fix (I7), not the reranker.
 
 **Caveat:** the G-Eval *reasoning* scores swung erratically (e.g. Q4 0.80→0.10
 despite now-perfect precision/recall) — judge noise, not signal. The deterministic
 backbone is the trustworthy delta; the LLM-judge layer needs multi-sample
 averaging to be A/B-usable (folds into I9).
+
+### I2 · Counter-query / adverse-retrieval step 🔄
+
+**Diagnostic first (fast, retriever-level).** Case-brief adverse_recall was 0.40
+(2/5) after I1. Checked whether the 5 adverse docs are reachable under explicit
+adverse-framed queries (pool 60):
+
+| Adverse doc | Best rank under a counter-query | Reachable? |
+|---|---|---|
+| DOC_029 | 1 | yes (already found) |
+| DOC_014 | 5 | yes (counter-query) |
+| DOC_030 | 7 | yes ("permit/use breach" framing) |
+| DOC_028 | 12 | yes (deeper / union of queries) |
+| **DOC_002** | **None (not in top 60)** | **no — content too far from the brief** |
+
+**Finding:** the counter-query approach has a realistic **ceiling of ~0.80 (4/5)**.
+DOC_002 (agricultural tractor used non-agriculturally; a scooterist victim) is
+semantically too distant from "commercial truck, unlicensed driver" to retrieve by
+content — it needs **metadata tagging + filtering (I7)**, not query phrasing. Also:
+a *single* adverse phrasing only finds 1–2; the docs differ in facts (tractor/jeep/
+passenger), so the agent must run **several** adverse-framed searches and union them.
+
+**Change tested:** added a MANDATORY ADVERSE-SEARCH PASS to the deep-research
+prompt — run multiple counter-queries in the opponent's vocabulary (exoneration /
+policy void / gratuitous passenger / permit breach). Prompt-only.
+
+**Result: NULL — reverted.** A/B on case-brief adverse_recall, 3 matched runs each
+(no judges, agent driven directly to isolate the metric):
+
+| prompt | adverse_recall runs | mean | precision | recall |
+|---|---|---|---|---|
+| old (baseline) | 0.40, 0.20, 0.00 | **0.20** | 0.84 | 0.43 |
+| new (counter-query) | 0.20, 0.00, 0.40 | **0.20** | 0.87 | 0.46 |
+
+Identical distributions — **no measurable effect.** Root cause (confirmed by the
+retriever diagnostic above): the adverse docs sit at ranks 5–16 and DOC_002 is
+unreachable, so they don't survive into the agent's reranked top-8 — prompting the
+agent to "search adversarially" can't cite docs it never retrieves. **The
+bottleneck is retrieval, not agent strategy.** Reverted the prompt; re-scoped the
+adverse-recall fix to **I7 (metadata tagging + filtering)** — tag each doc by
+insurer-outcome and retrieve adverse docs by that label, not by content similarity
+to the brief. The prompt directive can return once retrieval can surface them.
+
+**Methodology finding (→ I9):** adverse_recall (denominator 5) is too noisy for
+single-run A/B — it ranges 0.00–0.40 run to run. The "I1 doubled adverse_recall
+0.20→0.40" claim was a single-sample artifact; the true value is ~0.20 and the
+reranker did **not** reliably move it (its robust win is precision/recall). Future
+A/B of small-denominator or LLM-judge metrics must average ≥3 runs.
