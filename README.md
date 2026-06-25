@@ -9,8 +9,11 @@ vehicles?") and deep precedent research ("Find precedents supporting our
 argument on contributory negligence") — **deciding its own workflow** rather than
 following hard-coded steps.
 
-> See [`ADR.md`](ADR.md) for the architecture decision record and
-> [`eval_results.md`](eval_results.md) (generated) for evaluation results.
+> Docs: [`ADR.md`](ADR.md) — architecture decisions + measured results ·
+> [`docs/EVALUATION.md`](docs/EVALUATION.md) — how the eval works ·
+> [`docs/GOLDEN_TEST_SET.md`](docs/GOLDEN_TEST_SET.md) — the verified gold set ·
+> [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md) — retrieval-improvement tracking log ·
+> `eval_results.md` (generated).
 
 ---
 
@@ -20,7 +23,11 @@ following hard-coded steps.
 PDFs ─▶ parse (PyMuPDF) ─▶ chunk (recursive) ─▶ embed ─▶ Chroma (dense)
                                               └────────▶ BM25 (keyword)
                                                               │
-                          search_corpus / get_document  ◀── hybrid ensemble
+                                          hybrid ensemble (over-retrieve ~40)
+                                                              │
+                                        cross-encoder reranker ─▶ top-8
+                                                              │
+                          search_corpus / get_document  ◀──────┘
                                       │
                           Gemini 3.5 Flash agent (ReAct, LangGraph)
                                       │
@@ -28,8 +35,11 @@ PDFs ─▶ parse (PyMuPDF) ─▶ chunk (recursive) ─▶ embed ─▶ Chroma 
 ```
 
 - **Retrieval:** hybrid — BM25 (keyword) + dense embeddings (`bge-small-en-v1.5`)
-  blended with `EnsembleRetriever`. Legal queries need both exact-term and
-  semantic matching.
+  blended with `EnsembleRetriever`, then a **cross-encoder reranker**
+  (`ms-marco-MiniLM-L-6-v2`) over the ~40 candidates re-ranks them to the top-8.
+  Legal queries need both exact-term and semantic matching; the reranker lifted
+  measured precision +0.19 / recall +0.09 (see [`docs/EXPERIMENTS.md`](docs/EXPERIMENTS.md)).
+  Toggle via `use_reranker` in `src/config.py`.
 - **Agent:** `langchain.agents.create_agent` (LangGraph ReAct loop) with **two
   tools** — `search_corpus` (breadth) and `get_document` (depth). The agent
   composing these in different orders/counts *is* the dynamic workflow; there is
@@ -41,11 +51,12 @@ PDFs ─▶ parse (PyMuPDF) ─▶ chunk (recursive) ─▶ embed ─▶ Chroma 
 
 ```
 src/
-├── config.py              # paths, model + chunk/retrieval params
+├── config.py              # paths, model + chunk/retrieval params (+ reranker flags)
 ├── ingest/{parse,chunk,build_index}.py
 ├── retrieval/retriever.py # hybrid BM25 + dense
+├── retrieval/rerank.py    # cross-encoder reranker (I1)
 ├── agent/{tools,prompts,schemas,graph}.py   # graph.py is the importable core
-└── eval/{gold_set,metrics,judge,run_eval}.py
+└── eval/{gold_set,metrics,judge,run_eval,retrieval_eval}.py  # retrieval_eval = fast recall@k
 app.py                     # Streamlit UI
 tests/test_retrieval.py
 ```
