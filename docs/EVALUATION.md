@@ -79,6 +79,51 @@ split** — `src/eval/retrieval_eval.py` scores retrieval alone (recall@k), whil
 faithfulness isolates the *generator* given the retrieved context, so a bad answer
 can be traced to the half that broke.
 
+## Alignment with the task objective (does the eval grade the right behaviour?)
+
+The assessment fixes what the eval must track: the agent's **3 required outputs**
+(Supporting Precedents · Adverse Precedents · Strategy) and **4 eval dimensions**
+(Precision · Recall · Reasoning Quality · Adverse Identification).
+
+**Required dimensions — fully covered**, 1:1:
+
+| Dimension | Metric |
+|---|---|
+| Precision | `precision` (deterministic, cited doc_ids vs gold) |
+| Recall | `recall` (deterministic) |
+| Reasoning Quality | `reasoning` G-Eval |
+| Adverse Identification | `adverse_recall` (deterministic) + `adverse_honesty` G-Eval |
+| (grounding — beyond the brief) | `faithfulness` G-Eval (I9) |
+
+**Agent behaviours — covered, with one gap:**
+
+| Agent must produce | Measured by | Status |
+|---|---|---|
+| Supporting precedents | precision/recall + reasoning | ✅ |
+| Adverse precedents | adverse_recall + adverse_honesty | ✅ |
+| **Strategy** (prioritised arguments, realistic compensation range, risks) | — | ❌ **no metric** |
+| General queries (minimal research) | `deep=False` queries (Q3/Q5/Q6/Q7) | ✅ |
+| Dynamic workflow (no hard-coded steps) | tool-call traces (ADR §3), not a metric | ◐ architecture, by design |
+| Ground answers in retrieved text | `faithfulness` (I9) | ✅ |
+
+**Decision & reasoning:**
+- **The eval is aligned with the task objective** — all four required dimensions
+  are implemented, both deep and general queries are exercised (the flexibility
+  requirement), and faithfulness adds the grounding check the brief implies.
+- **Known gap: the Strategy section (3rd mandatory output) has no dedicated
+  metric.** The `reasoning` rubric ("legally coherent conclusions") brushes it but
+  does not assess whether the strategy prioritises arguments, gives a *realistic
+  compensation range with a basis in the cited precedents*, and flags key risks.
+  **Reason it's a gap, not a defect:** the three deterministic + three judge
+  metrics cover *which* precedents and *how grounded/honest* the answer is; strategy
+  quality is a distinct, subjective axis that needs its own G-Eval rubric.
+- **Decision: defer a "Strategy Quality" G-Eval to a follow-up** rather than block
+  the faithfulness baseline. When added it slots in exactly like the other G-Evals
+  (criteria + `[INPUT, ACTUAL_OUTPUT]`, gated on `deep` queries).
+- **Dynamic-workflow is intentionally not a metric** — the assessment frames it as
+  an architecture property; it's evidenced by the tool-call-count contrast between
+  simple and deep queries (ADR §3), not a score.
+
 ## 4. Is the gold set "correct"? — strengths and limits
 
 **What makes it trustworthy:**
