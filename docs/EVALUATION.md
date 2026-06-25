@@ -53,13 +53,31 @@ That is the reproducible "backbone."
 recall formula but only over the `adverse` list. Targets the worst failure mode:
 silently burying the precedents that cut against the client.
 
-**(d) reasoning / adverse_honesty** — the **only** LLM-judged metrics. DeepEval
-G-Eval asks Gemini (via the `GeminiJudge` adapter in `judge.py`) to score 0–1 on
-a rubric. These are **non-deterministic** — they wobble run to run, and degrade
-gracefully (skipped) if `deepeval` isn't installed.
+**(d) reasoning / adverse_honesty** — LLM-judged. DeepEval G-Eval asks Gemini (via
+the `GeminiJudge` adapter in `judge.py`) to score 0–1 on a rubric. These are
+**non-deterministic** — they wobble run to run, and degrade gracefully (skipped)
+if `deepeval` isn't installed.
+
+**(e) faithfulness (grounding)** — LLM-judged, the canonical RAG "is the answer
+grounded in what was retrieved?" probe. The eval captures the chunks the agent
+*actually* retrieved (via a log in `search_corpus`) and passes them as
+`retrieval_context`; a G-Eval rubric then checks that every claim is traceable to
+a chunk. This is the **confident-hallucination detector** — the dangerous legal
+failure (inventing a holding the retrieved text never states).
+
+> **Why a custom G-Eval and not DeepEval's `FaithfulnessMetric`:** the stock metric
+> only penalises *contradictions* — a fabricated claim the context doesn't mention
+> gets verdict "idk" and counts as faithful. We verified this: a fabricated answer
+> scored **1.0** on the stock metric. For law, fabrication *is* the failure mode,
+> so the custom rubric penalises any unsupported claim (grounded → 1.0, fabricated
+> → 0.0). This is exactly the guidance to "penalise hallucination harder than the
+> built-in metric for high-stakes domains."
 
 So the eval is layered: a reproducible deterministic backbone (a, b, c) plus a
-softer LLM-judge layer (d).
+softer LLM-judge layer (d, e). It also follows the RAG-eval **retriever/generator
+split** — `src/eval/retrieval_eval.py` scores retrieval alone (recall@k), while
+faithfulness isolates the *generator* given the retrieved context, so a bad answer
+can be traced to the half that broke.
 
 ## 4. Is the gold set "correct"? — strengths and limits
 

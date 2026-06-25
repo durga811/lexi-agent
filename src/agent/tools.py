@@ -34,6 +34,24 @@ def _hit_header(meta: dict) -> str:
     return f"[{doc_id} · {title}]" if title else f"[{doc_id}]"
 
 
+# --- retrieval recorder (for faithfulness eval, I9) -----------------------
+# The faithfulness metric needs the chunks the agent ACTUALLY saw — but the agent
+# issues many search_corpus calls per run, so we accumulate the retrieved chunk
+# texts here. The eval resets this before a run and reads the union after, to
+# check every claim in the answer against what was genuinely retrieved. No effect
+# on normal operation; it's just an append-only log.
+_RETRIEVAL_LOG: list[str] = []
+
+
+def reset_retrieval_log() -> None:
+    _RETRIEVAL_LOG.clear()
+
+
+def get_retrieval_log() -> list[str]:
+    """Deduped chunk texts retrieved since the last reset (preserves order)."""
+    return list(dict.fromkeys(_RETRIEVAL_LOG))
+
+
 @tool
 def search_corpus(query: str) -> str:
     """Search the corpus of Indian court judgments for passages relevant to `query`.
@@ -46,8 +64,10 @@ def search_corpus(query: str) -> str:
     hits = get_retriever().invoke(query)
     if not hits:
         return "No relevant passages found."
+    used = hits[:8]
+    _RETRIEVAL_LOG.extend(h.page_content for h in used)  # record what the agent saw
     return "\n\n".join(
-        f"{_hit_header(h.metadata)} {h.page_content}" for h in hits[:8]
+        f"{_hit_header(h.metadata)} {h.page_content}" for h in used
     )
 
 

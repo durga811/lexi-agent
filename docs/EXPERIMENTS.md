@@ -27,7 +27,7 @@ the verified gold set, recorded here, and committed. One variable at a time.
 | **I5** | Tune ensemble BM25/dense weights | lexical vs semantic balance | ⏳ |
 | **I6** | Structure-aware chunking (Held/Ratio) | Q2 reasoning (0.30) | ⏳ |
 | **I7** | Metadata filtering (court/vehicle/year) | precision, doc-level | ⏳ |
-| **I9** | Refine negative-query abstention metric | eval correctness | ⏳ |
+| **I9** | Eval hardening — faithfulness-vs-context probe | eval correctness | ✅ added (faithfulness); multi-sample/abstention still ⏳ |
 
 Legend: ⏳ todo · 🔄 in progress · ✅ merged · ❌ rejected (kept for the record).
 
@@ -292,3 +292,26 @@ these and I2 was null.
   outcome-classifier at ingest (read the operative order; heavier, watch eval
   circularity) or it stays a documented limitation — the honest ceiling on the
   adverse dimension for this corpus.
+
+### I9 · Faithfulness-vs-context probe ✅ added
+
+The eval previously judged only `input + answer` — it never checked the answer
+against the chunks the agent actually retrieved (the canonical RAG "faithfulness"
+probe). Added it:
+- **Retrieval capture** (`tools.py`): `search_corpus` logs the chunks it returns;
+  the eval brackets each run with `reset_retrieval_log()` / `get_retrieval_log()`
+  and passes the union as `retrieval_context`.
+- **Custom Grounding G-Eval** (not stock `FaithfulnessMetric`). **Why:** DeepEval's
+  `FaithfulnessMetric` only penalises *contradictions* — an unsupported/fabricated
+  claim gets verdict "idk" and counts as faithful. Verified: a fabricated answer
+  ("aspirin causes kidney failure", context says only "stomach irritation") scored
+  **1.0** on the stock metric. For a legal agent, **fabrication is the failure
+  mode**, so the G-Eval rubric penalises any claim not traceable to a chunk —
+  grounded → 1.0, fabricated → 0.0.
+
+**First signal (Q1, single run):** **faithfulness 0.40** over 79 retrieved chunks,
+while precision 0.9 / reasoning 1.0. The classic confident-hallucination signature
+— the answer looks good but ~40% of its claims (landmark case names, legal
+principles) aren't traceable to the retrieved text. Previously invisible. *(Like
+adverse_recall, a single faithfulness score is noisy — the multi-sample harness is
+still on the I9 backlog before A/B-ing it.)*
