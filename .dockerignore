@@ -1,0 +1,13 @@
+# Keep the Space image lean — exclude everything the running app doesn't need.
+.git
+.venv
+__pycache__
+*.pyc
+data/raw
+data/chroma
+.pytest_cache
+.ruff_cache
+.deepeval*
+eval_results*.md
+tests
+.env

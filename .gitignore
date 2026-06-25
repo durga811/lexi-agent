@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Secrets / local config
+.env
+.streamlit/secrets.toml
+
+# Source PDFs — local only; the committed data/corpus.jsonl (extracted text) is
+# what the app and deploys use. Regenerate corpus.jsonl via `python -m src.ingest.parse`.
+data/raw/
+
+# Persisted vector index (rebuilt from data/corpus.jsonl on first run)
+data/chroma/
+
+# Eval output (regenerable; the curated record lives in documents/)
+eval_results*.md
+.deepeval*
+
+# Internal working notes + experiment/analysis scripts (not part of the deliverable)
+docs/
+scripts/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
